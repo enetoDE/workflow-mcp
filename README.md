@@ -148,7 +148,7 @@ Wrong:
 }
 ```
 
-If the config already has other settings such as `preferences`, keep them. Only add or update the `workflow-mcp` entry inside `mcpServers`.
+If the config already has other settings such as `preferences`, keep them. Only add or update entries inside `mcpServers`.
 
 ## Config Example: sevdesk Only
 
@@ -182,7 +182,12 @@ Replace:
 
 Use this if you want sevdesk from this project and Pipedrive from the separate `pipedrive-mcp-server` project.
 
-Both entries must be inside the same top-level `mcpServers` object.
+Both servers must be inside the same top-level `mcpServers` object:
+
+- `workflow-mcp` runs sevdesk from this repository.
+- `pipedrive` runs Pipedrive from the separate `pipedrive-mcp-server` folder.
+
+Do not put Pipedrive environment variables inside `workflow-mcp`. Pipedrive has its own server entry.
 
 Replace:
 
@@ -214,11 +219,19 @@ Replace:
       ],
       "env": {
         "PIPEDRIVE_API_TOKEN": "replace-with-pipedrive-api-token",
-        "PIPEDRIVE_DOMAIN": "companyname.pipedrive.com"
+        "PIPEDRIVE_DOMAIN": "companyname.pipedrive.com",
+        "MCP_TRANSPORT": "stdio"
       }
     }
   }
 }
+```
+
+For example, on a local machine the two paths may look like:
+
+```text
+/Users/<your-username>/Desktop/workflow-mcp/dist/index.js
+/Users/<your-username>/Desktop/pipedrive-mcp-server/build/index.js
 ```
 
 ## Config Example: Keep Existing Preferences
@@ -242,6 +255,17 @@ Example:
         "SEVDESK_DEFAULT_CONTACT_CATEGORY_ID": "3",
         "SEVDESK_DEFAULT_COUNTRY_ID": "1",
         "SEVDESK_DEFAULT_UNITY_ID": "1"
+      }
+    },
+    "pipedrive": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/pipedrive-mcp-server/build/index.js"
+      ],
+      "env": {
+        "PIPEDRIVE_API_TOKEN": "replace-with-pipedrive-api-token",
+        "PIPEDRIVE_DOMAIN": "companyname.pipedrive.com",
+        "MCP_TRANSPORT": "stdio"
       }
     }
   },
