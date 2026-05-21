@@ -51,6 +51,124 @@ function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> 
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
 }
 
+function compactListResponse(response: unknown, itemName: string, mapper: (item: Record<string, unknown>) => Record<string, unknown>) {
+  if (!response || typeof response !== "object") {
+    return response;
+  }
+
+  const result = response as Record<string, unknown>;
+  const data = Array.isArray(result.data) ? result.data : [];
+
+  return {
+    ...result,
+    summary: `Returned ${data.length} ${itemName}.`,
+    returned_count: data.length,
+    data: data.map((item) => (item && typeof item === "object" ? mapper(item as Record<string, unknown>) : item)),
+  };
+}
+
+function valueOf(item: Record<string, unknown>, key: string): unknown {
+  return item[key];
+}
+
+function nestedName(item: Record<string, unknown>, key: string): unknown {
+  const value = item[key];
+  return value && typeof value === "object" ? (value as Record<string, unknown>).name : undefined;
+}
+
+function summarizeDeal(deal: Record<string, unknown>) {
+  return compactObject({
+    id: valueOf(deal, "id"),
+    title: valueOf(deal, "title"),
+    value: valueOf(deal, "value"),
+    currency: valueOf(deal, "currency"),
+    status: valueOf(deal, "status"),
+    probability: valueOf(deal, "probability"),
+    stage_id: valueOf(deal, "stage_id"),
+    stage_name: nestedName(deal, "stage"),
+    pipeline_id: valueOf(deal, "pipeline_id"),
+    pipeline_name: nestedName(deal, "pipeline"),
+    owner_id: valueOf(deal, "owner_id"),
+    owner_name: nestedName(deal, "owner"),
+    organization_name: nestedName(deal, "org"),
+    person_name: nestedName(deal, "person"),
+    add_time: valueOf(deal, "add_time"),
+    update_time: valueOf(deal, "update_time"),
+    expected_close_date: valueOf(deal, "expected_close_date"),
+    last_activity_date: valueOf(deal, "last_activity_date"),
+    next_activity_date: valueOf(deal, "next_activity_date"),
+    close_time: valueOf(deal, "close_time"),
+  });
+}
+
+function summarizePerson(person: Record<string, unknown>) {
+  return compactObject({
+    id: valueOf(person, "id"),
+    name: valueOf(person, "name"),
+    owner_id: valueOf(person, "owner_id"),
+    owner_name: nestedName(person, "owner"),
+    organization_name: nestedName(person, "org"),
+    email: valueOf(person, "email"),
+    phone: valueOf(person, "phone"),
+    add_time: valueOf(person, "add_time"),
+    update_time: valueOf(person, "update_time"),
+  });
+}
+
+function summarizeOrganization(org: Record<string, unknown>) {
+  return compactObject({
+    id: valueOf(org, "id"),
+    name: valueOf(org, "name"),
+    owner_id: valueOf(org, "owner_id"),
+    owner_name: nestedName(org, "owner"),
+    address: valueOf(org, "address"),
+    add_time: valueOf(org, "add_time"),
+    update_time: valueOf(org, "update_time"),
+  });
+}
+
+function summarizeActivity(activity: Record<string, unknown>) {
+  return compactObject({
+    id: valueOf(activity, "id"),
+    subject: valueOf(activity, "subject"),
+    type: valueOf(activity, "type"),
+    done: valueOf(activity, "done"),
+    owner_id: valueOf(activity, "owner_id"),
+    deal_id: valueOf(activity, "deal_id"),
+    person_id: valueOf(activity, "person_id"),
+    org_id: valueOf(activity, "org_id"),
+    due_date: valueOf(activity, "due_date"),
+    due_time: valueOf(activity, "due_time"),
+    duration: valueOf(activity, "duration"),
+    update_time: valueOf(activity, "update_time"),
+  });
+}
+
+function summarizeLead(lead: Record<string, unknown>) {
+  return compactObject({
+    id: valueOf(lead, "id"),
+    title: valueOf(lead, "title"),
+    owner_id: valueOf(lead, "owner_id"),
+    person_id: valueOf(lead, "person_id"),
+    organization_id: valueOf(lead, "organization_id"),
+    value: valueOf(lead, "value"),
+    currency: valueOf(lead, "currency"),
+    add_time: valueOf(lead, "add_time"),
+    update_time: valueOf(lead, "update_time"),
+  });
+}
+
+function summarizeStage(stage: Record<string, unknown>) {
+  return compactObject({
+    id: valueOf(stage, "id"),
+    name: valueOf(stage, "name"),
+    pipeline_id: valueOf(stage, "pipeline_id"),
+    order_nr: valueOf(stage, "order_nr"),
+    active_flag: valueOf(stage, "active_flag"),
+    deal_probability: valueOf(stage, "deal_probability"),
+  });
+}
+
 function getV2List(client: PipedriveClient, path: string, query: Record<string, string | number | boolean | undefined>, fetchAll: boolean) {
   return fetchAll ? client.getAllV2(path, query) : client.getV2(path, query);
 }
@@ -116,32 +234,34 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     },
     async (input) => {
       try {
+        const response = await getV2List(
+          client,
+          "deals",
+          compactObject({
+            limit: input.limit,
+            cursor: input.cursor,
+            filter_id: input.filterId,
+            ids: input.ids,
+            owner_id: input.ownerId,
+            person_id: input.personId,
+            org_id: input.orgId,
+            pipeline_id: input.pipelineId,
+            stage_id: input.stageId,
+            status: input.status,
+            updated_since: input.updatedSince,
+            updated_until: input.updatedUntil,
+            sort_by: input.sortBy,
+            sort_direction: input.sortDirection,
+            include_fields: input.includeFields,
+            custom_fields: input.customFields,
+            include_option_labels: input.includeOptionLabels,
+            include_labels: input.includeLabels,
+          }),
+          input.fetchAll,
+        );
+
         return jsonText(
-          await getV2List(
-            client,
-            "deals",
-            compactObject({
-              limit: input.limit,
-              cursor: input.cursor,
-              filter_id: input.filterId,
-              ids: input.ids,
-              owner_id: input.ownerId,
-              person_id: input.personId,
-              org_id: input.orgId,
-              pipeline_id: input.pipelineId,
-              stage_id: input.stageId,
-              status: input.status,
-              updated_since: input.updatedSince,
-              updated_until: input.updatedUntil,
-              sort_by: input.sortBy,
-              sort_direction: input.sortDirection,
-              include_fields: input.includeFields,
-              custom_fields: input.customFields,
-              include_option_labels: input.includeOptionLabels,
-              include_labels: input.includeLabels,
-            }),
-            input.fetchAll,
-          ),
+          compactListResponse(response, "deals", summarizeDeal),
         );
       } catch (error) {
         return errorText(error);
@@ -259,29 +379,31 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     },
     async (input) => {
       try {
+        const response = await getV2List(
+          client,
+          "persons",
+          compactObject({
+            limit: input.limit,
+            cursor: input.cursor,
+            filter_id: input.filterId,
+            ids: input.ids,
+            owner_id: input.ownerId,
+            org_id: input.orgId,
+            deal_id: input.dealId,
+            updated_since: input.updatedSince,
+            updated_until: input.updatedUntil,
+            sort_by: input.sortBy,
+            sort_direction: input.sortDirection,
+            include_fields: input.includeFields,
+            custom_fields: input.customFields,
+            include_option_labels: input.includeOptionLabels,
+            include_labels: input.includeLabels,
+          }),
+          input.fetchAll,
+        );
+
         return jsonText(
-          await getV2List(
-            client,
-            "persons",
-            compactObject({
-              limit: input.limit,
-              cursor: input.cursor,
-              filter_id: input.filterId,
-              ids: input.ids,
-              owner_id: input.ownerId,
-              org_id: input.orgId,
-              deal_id: input.dealId,
-              updated_since: input.updatedSince,
-              updated_until: input.updatedUntil,
-              sort_by: input.sortBy,
-              sort_direction: input.sortDirection,
-              include_fields: input.includeFields,
-              custom_fields: input.customFields,
-              include_option_labels: input.includeOptionLabels,
-              include_labels: input.includeLabels,
-            }),
-            input.fetchAll,
-          ),
+          compactListResponse(response, "persons", summarizePerson),
         );
       } catch (error) {
         return errorText(error);
@@ -372,27 +494,29 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     },
     async (input) => {
       try {
+        const response = await getV2List(
+          client,
+          "organizations",
+          compactObject({
+            limit: input.limit,
+            cursor: input.cursor,
+            filter_id: input.filterId,
+            ids: input.ids,
+            owner_id: input.ownerId,
+            updated_since: input.updatedSince,
+            updated_until: input.updatedUntil,
+            sort_by: input.sortBy,
+            sort_direction: input.sortDirection,
+            include_fields: input.includeFields,
+            custom_fields: input.customFields,
+            include_option_labels: input.includeOptionLabels,
+            include_labels: input.includeLabels,
+          }),
+          input.fetchAll,
+        );
+
         return jsonText(
-          await getV2List(
-            client,
-            "organizations",
-            compactObject({
-              limit: input.limit,
-              cursor: input.cursor,
-              filter_id: input.filterId,
-              ids: input.ids,
-              owner_id: input.ownerId,
-              updated_since: input.updatedSince,
-              updated_until: input.updatedUntil,
-              sort_by: input.sortBy,
-              sort_direction: input.sortDirection,
-              include_fields: input.includeFields,
-              custom_fields: input.customFields,
-              include_option_labels: input.includeOptionLabels,
-              include_labels: input.includeLabels,
-            }),
-            input.fetchAll,
-          ),
+          compactListResponse(response, "organizations", summarizeOrganization),
         );
       } catch (error) {
         return errorText(error);
@@ -456,29 +580,31 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     },
     async (input) => {
       try {
+        const response = await getV2List(
+          client,
+          "activities",
+          compactObject({
+            limit: input.limit,
+            cursor: input.cursor,
+            filter_id: input.filterId,
+            ids: input.ids,
+            owner_id: input.ownerId,
+            deal_id: input.dealId,
+            lead_id: input.leadId,
+            person_id: input.personId,
+            org_id: input.orgId,
+            done: input.done,
+            updated_since: input.updatedSince,
+            updated_until: input.updatedUntil,
+            sort_by: input.sortBy,
+            sort_direction: input.sortDirection,
+            include_fields: input.includeFields,
+          }),
+          input.fetchAll,
+        );
+
         return jsonText(
-          await getV2List(
-            client,
-            "activities",
-            compactObject({
-              limit: input.limit,
-              cursor: input.cursor,
-              filter_id: input.filterId,
-              ids: input.ids,
-              owner_id: input.ownerId,
-              deal_id: input.dealId,
-              lead_id: input.leadId,
-              person_id: input.personId,
-              org_id: input.orgId,
-              done: input.done,
-              updated_since: input.updatedSince,
-              updated_until: input.updatedUntil,
-              sort_by: input.sortBy,
-              sort_direction: input.sortDirection,
-              include_fields: input.includeFields,
-            }),
-            input.fetchAll,
-          ),
+          compactListResponse(response, "activities", summarizeActivity),
         );
       } catch (error) {
         return errorText(error);
@@ -538,22 +664,24 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     },
     async (input) => {
       try {
+        const response = await getV1OffsetList(
+          client,
+          "leads",
+          compactObject({
+            limit: input.limit,
+            start: input.start,
+            owner_id: input.ownerId,
+            person_id: input.personId,
+            organization_id: input.organizationId,
+            filter_id: input.filterId,
+            updated_since: input.updatedSince,
+            sort: input.sort,
+          }),
+          input.fetchAll,
+        );
+
         return jsonText(
-          await getV1OffsetList(
-            client,
-            "leads",
-            compactObject({
-              limit: input.limit,
-              start: input.start,
-              owner_id: input.ownerId,
-              person_id: input.personId,
-              organization_id: input.organizationId,
-              filter_id: input.filterId,
-              updated_since: input.updatedSince,
-              sort: input.sort,
-            }),
-            input.fetchAll,
-          ),
+          compactListResponse(response, "leads", summarizeLead),
         );
       } catch (error) {
         return errorText(error);
@@ -633,7 +761,14 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     },
     async ({ limit, cursor, fetchAll, sortBy, sortDirection }) => {
       try {
-        return jsonText(await getV2List(client, "pipelines", compactObject({ limit, cursor, sort_by: sortBy, sort_direction: sortDirection }), fetchAll));
+        const response = await getV2List(client, "pipelines", compactObject({ limit, cursor, sort_by: sortBy, sort_direction: sortDirection }), fetchAll);
+        return jsonText(compactListResponse(response, "pipelines", (pipeline) => compactObject({
+          id: valueOf(pipeline, "id"),
+          name: valueOf(pipeline, "name"),
+          order_nr: valueOf(pipeline, "order_nr"),
+          active: valueOf(pipeline, "is_active"),
+          update_time: valueOf(pipeline, "update_time"),
+        })));
       } catch (error) {
         return errorText(error);
       }
@@ -655,13 +790,15 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     },
     async ({ limit, cursor, fetchAll, pipelineId, sortBy, sortDirection }) => {
       try {
+        const response = await getV2List(
+          client,
+          "stages",
+          compactObject({ limit, cursor, pipeline_id: pipelineId, sort_by: sortBy, sort_direction: sortDirection }),
+          fetchAll,
+        );
+
         return jsonText(
-          await getV2List(
-            client,
-            "stages",
-            compactObject({ limit, cursor, pipeline_id: pipelineId, sort_by: sortBy, sort_direction: sortDirection }),
-            fetchAll,
-          ),
+          compactListResponse(response, "stages", summarizeStage),
         );
       } catch (error) {
         return errorText(error);

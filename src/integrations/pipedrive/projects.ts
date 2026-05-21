@@ -22,9 +22,14 @@ function jsonText(value: unknown) {
 
 function errorText(error: unknown) {
   if (error instanceof PipedriveApiError) {
+    const projectAccessMessage =
+      error.status === 404
+        ? "Pipedrive Projects returned 404. This usually means the Projects feature is not enabled for this account, the user has no Projects access, or the endpoint is unavailable for the plan."
+        : undefined;
+
     return jsonText({
       ok: false,
-      error: error.message,
+      error: projectAccessMessage ?? error.message,
       status: error.status,
       details: error.details,
     });
@@ -38,6 +43,72 @@ function errorText(error: unknown) {
 
 function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
+}
+
+function compactListResponse(response: unknown, itemName: string, mapper: (item: Record<string, unknown>) => Record<string, unknown>) {
+  if (!response || typeof response !== "object") {
+    return response;
+  }
+
+  const result = response as Record<string, unknown>;
+  const data = Array.isArray(result.data) ? result.data : [];
+
+  return {
+    ...result,
+    summary: `Returned ${data.length} ${itemName}.`,
+    returned_count: data.length,
+    data: data.map((item) => (item && typeof item === "object" ? mapper(item as Record<string, unknown>) : item)),
+  };
+}
+
+function valueOf(item: Record<string, unknown>, key: string): unknown {
+  return item[key];
+}
+
+function summarizeProject(project: Record<string, unknown>) {
+  return compactObject({
+    id: valueOf(project, "id"),
+    title: valueOf(project, "title"),
+    status: valueOf(project, "status"),
+    board_id: valueOf(project, "board_id"),
+    phase_id: valueOf(project, "phase_id"),
+    owner_id: valueOf(project, "owner_id"),
+    start_date: valueOf(project, "start_date"),
+    end_date: valueOf(project, "end_date"),
+    add_time: valueOf(project, "add_time"),
+    update_time: valueOf(project, "update_time"),
+    deal_ids: valueOf(project, "deal_ids"),
+    person_ids: valueOf(project, "person_ids"),
+    org_ids: valueOf(project, "org_ids"),
+  });
+}
+
+function summarizeTemplate(template: Record<string, unknown>) {
+  return compactObject({
+    id: valueOf(template, "id"),
+    title: valueOf(template, "title"),
+    name: valueOf(template, "name"),
+    is_deleted: valueOf(template, "is_deleted"),
+    add_time: valueOf(template, "add_time"),
+    update_time: valueOf(template, "update_time"),
+  });
+}
+
+function summarizeTask(task: Record<string, unknown>) {
+  return compactObject({
+    id: valueOf(task, "id"),
+    title: valueOf(task, "title"),
+    project_id: valueOf(task, "project_id"),
+    done: valueOf(task, "done"),
+    milestone: valueOf(task, "milestone"),
+    assignee_id: valueOf(task, "assignee_id"),
+    assignee_ids: valueOf(task, "assignee_ids"),
+    due_date: valueOf(task, "due_date"),
+    start_date: valueOf(task, "start_date"),
+    parent_task_id: valueOf(task, "parent_task_id"),
+    add_time: valueOf(task, "add_time"),
+    update_time: valueOf(task, "update_time"),
+  });
 }
 
 function getV2List(client: PipedriveClient, path: string, query: Record<string, string | number | boolean | undefined>, fetchAll: boolean) {
@@ -122,22 +193,24 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     },
     async (input) => {
       try {
+        const response = await getV2List(
+          client,
+          "projects",
+          compactObject({
+            limit: input.limit,
+            cursor: input.cursor,
+            filter_id: input.filterId,
+            status: input.status,
+            phase_id: input.phaseId,
+            deal_id: input.dealId,
+            person_id: input.personId,
+            org_id: input.orgId,
+          }),
+          input.fetchAll,
+        );
+
         return jsonText(
-          await getV2List(
-            client,
-            "projects",
-            compactObject({
-              limit: input.limit,
-              cursor: input.cursor,
-              filter_id: input.filterId,
-              status: input.status,
-              phase_id: input.phaseId,
-              deal_id: input.dealId,
-              person_id: input.personId,
-              org_id: input.orgId,
-            }),
-            input.fetchAll,
-          ),
+          compactListResponse(response, "projects", summarizeProject),
         );
       } catch (error) {
         return errorText(error);
@@ -224,7 +297,8 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     },
     async ({ limit, cursor, fetchAll }) => {
       try {
-        return jsonText(await getV2List(client, "projectTemplates", compactObject({ limit, cursor }), fetchAll));
+        const response = await getV2List(client, "projectTemplates", compactObject({ limit, cursor }), fetchAll);
+        return jsonText(compactListResponse(response, "project templates", summarizeTemplate));
       } catch (error) {
         return errorText(error);
       }
@@ -266,21 +340,23 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     },
     async (input) => {
       try {
+        const response = await getV2List(
+          client,
+          "tasks",
+          compactObject({
+            limit: input.limit,
+            cursor: input.cursor,
+            project_id: input.projectId,
+            is_done: input.isDone,
+            is_milestone: input.isMilestone,
+            assignee_id: input.assigneeId,
+            parent_task_id: input.parentTaskId,
+          }),
+          input.fetchAll,
+        );
+
         return jsonText(
-          await getV2List(
-            client,
-            "tasks",
-            compactObject({
-              limit: input.limit,
-              cursor: input.cursor,
-              project_id: input.projectId,
-              is_done: input.isDone,
-              is_milestone: input.isMilestone,
-              assignee_id: input.assigneeId,
-              parent_task_id: input.parentTaskId,
-            }),
-            input.fetchAll,
-          ),
+          compactListResponse(response, "project tasks", summarizeTask),
         );
       } catch (error) {
         return errorText(error);
@@ -356,21 +432,23 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     },
     async (input) => {
       try {
+        const response = await getV2List(
+          client,
+          "projects/search",
+          compactObject({
+            term: input.term,
+            limit: input.limit,
+            cursor: input.cursor,
+            fields: input.fields?.join(","),
+            exact_match: input.exactMatch,
+            person_id: input.personId,
+            organization_id: input.organizationId,
+          }),
+          input.fetchAll,
+        );
+
         return jsonText(
-          await getV2List(
-            client,
-            "projects/search",
-            compactObject({
-              term: input.term,
-              limit: input.limit,
-              cursor: input.cursor,
-              fields: input.fields?.join(","),
-              exact_match: input.exactMatch,
-              person_id: input.personId,
-              organization_id: input.organizationId,
-            }),
-            input.fetchAll,
-          ),
+          compactListResponse(response, "projects", summarizeProject),
         );
       } catch (error) {
         return errorText(error);
