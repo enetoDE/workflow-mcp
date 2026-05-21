@@ -2,7 +2,7 @@
 
 `workflow-mcp` is a local MCP server for Claude Desktop.
 
-It lets Claude Desktop use company tools such as sevdesk and Pipedrive from one local Node.js server.
+This repository contains the sevdesk integration only. Pipedrive is handled by the separate `pipedrive-mcp-server` project.
 
 The server runs on the user's computer. API keys stay in the local Claude Desktop config and are not stored in this repository.
 
@@ -22,29 +22,6 @@ The sevdesk integration can:
 - list unpaid invoices
 - list recent transactions
 
-### Pipedrive CRM
-
-The Pipedrive CRM integration can:
-
-- test the Pipedrive connection
-- list, get, create, and update deals
-- list, get, and create persons
-- list and create organizations
-- list and create activities
-- list and get leads
-- search Pipedrive records
-- list pipelines and stages
-
-### Pipedrive Projects
-
-The Pipedrive Projects integration can:
-
-- list, get, create, and update projects
-- list project phases
-- list and get project templates
-- list, get, create, and update project tasks
-- search projects
-
 ## Requirements
 
 Install these before using the project:
@@ -52,8 +29,7 @@ Install these before using the project:
 - Node.js 20 or newer
 - npm
 - Claude Desktop for macOS
-- sevdesk API token, if using sevdesk
-- Pipedrive API token and Pipedrive company domain, if using Pipedrive
+- sevdesk API token
 
 ## Install
 
@@ -98,7 +74,7 @@ Stop it with `Ctrl+C`.
 
 ## Environment Variables
 
-The API keys are passed through the Claude Desktop config.
+The API key is passed through the Claude Desktop config.
 
 You can also copy the example env file for reference:
 
@@ -128,21 +104,6 @@ SEVDESK_CONTACT_PERSON_ID=
 ```
 
 `SEVDESK_CONTACT_PERSON_ID` is only needed for creating invoice drafts when no `contactPersonId` is passed in the tool request.
-
-### Pipedrive Variables
-
-Required:
-
-```text
-PIPEDRIVE_API_TOKEN
-PIPEDRIVE_DOMAIN
-```
-
-Example:
-
-```text
-PIPEDRIVE_DOMAIN=companyname.pipedrive.com
-```
 
 ## Claude Desktop Config on macOS
 
@@ -191,8 +152,6 @@ If the config already has other settings such as `preferences`, keep them. Only 
 
 ## Config Example: sevdesk Only
 
-Use this if only sevdesk should be enabled.
-
 Replace:
 
 - `/absolute/path/to/workflow-mcp` with the local project path
@@ -219,18 +178,17 @@ Replace:
 }
 ```
 
-## Config Example: sevdesk and Pipedrive
+## Config Example: sevdesk and Separate Pipedrive Server
 
-Use this if sevdesk and Pipedrive should both be enabled.
+Use this if you want sevdesk from this project and Pipedrive from the separate `pipedrive-mcp-server` project.
 
-Both integrations go inside the same `workflow-mcp` entry. Do not create a second MCP server entry for Pipedrive if this project is handling Pipedrive.
+Both entries must be inside the same top-level `mcpServers` object.
 
 Replace:
 
-- `/absolute/path/to/workflow-mcp` with the local project path
-- `replace-with-sevdesk-api-token` with the real sevdesk API token
-- `replace-with-pipedrive-api-token` with the real Pipedrive API token
-- `companyname.pipedrive.com` with the real Pipedrive company domain
+- `/absolute/path/to/workflow-mcp` with the local path to this project
+- `/absolute/path/to/pipedrive-mcp-server` with the local path to the Pipedrive project
+- both API token values with real tokens
 
 ```json
 {
@@ -246,7 +204,15 @@ Replace:
         "SEVDESK_USER_AGENT": "workflow-mcp",
         "SEVDESK_DEFAULT_CONTACT_CATEGORY_ID": "3",
         "SEVDESK_DEFAULT_COUNTRY_ID": "1",
-        "SEVDESK_DEFAULT_UNITY_ID": "1",
+        "SEVDESK_DEFAULT_UNITY_ID": "1"
+      }
+    },
+    "pipedrive": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/pipedrive-mcp-server/build/index.js"
+      ],
+      "env": {
         "PIPEDRIVE_API_TOKEN": "replace-with-pipedrive-api-token",
         "PIPEDRIVE_DOMAIN": "companyname.pipedrive.com"
       }
@@ -275,9 +241,7 @@ Example:
         "SEVDESK_USER_AGENT": "workflow-mcp",
         "SEVDESK_DEFAULT_CONTACT_CATEGORY_ID": "3",
         "SEVDESK_DEFAULT_COUNTRY_ID": "1",
-        "SEVDESK_DEFAULT_UNITY_ID": "1",
-        "PIPEDRIVE_API_TOKEN": "replace-with-pipedrive-api-token",
-        "PIPEDRIVE_DOMAIN": "companyname.pipedrive.com"
+        "SEVDESK_DEFAULT_UNITY_ID": "1"
       }
     }
   },
@@ -299,7 +263,7 @@ After saving `claude_desktop_config.json`:
 Example prompt:
 
 ```text
-Use workflow-mcp to test the sevdesk and Pipedrive connections.
+Use workflow-mcp to test the sevdesk connection.
 ```
 
 ## Updating the Project Later
@@ -317,13 +281,7 @@ Restart Claude Desktop after rebuilding.
 ## Known Requirements and Limits
 
 - sevdesk tools need a sevdesk account with API access.
-- Pipedrive tools need a Pipedrive account with API access.
-- Pipedrive Projects tools need Projects to be enabled in the Pipedrive account.
-- Some Pipedrive Projects endpoints are marked as beta in the official Pipedrive API docs.
-- Pipedrive list tools return one page by default. Use the `limit` input to keep responses small.
-- Pipedrive list tools return compact summaries by default so dashboard prompts do not exceed Claude Desktop's tool-result size limit. Use the matching `get_*` tool when full details for one record are needed.
-- Pipedrive list tools support `fetchAll: true` when all pages are needed, but large accounts can return more data than Claude Desktop can display in one tool result.
-- Pipedrive still applies its own request limits and rate limits.
+- sevdesk invoice draft creation needs a valid sevdesk contact person user ID, either through `SEVDESK_CONTACT_PERSON_ID` or the `contactPersonId` tool input.
 - Build files are not committed to GitHub. Each machine must run `npm install` and `npm run build` after cloning.
 
 ## Project Structure
@@ -334,7 +292,6 @@ src/
   config.ts
   integrations/
     sevdesk/
-    pipedrive/
 ```
 
 ## Development Commands
