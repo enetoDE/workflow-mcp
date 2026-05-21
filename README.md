@@ -320,7 +320,9 @@ Restart Claude Desktop after rebuilding.
 - Pipedrive tools need a Pipedrive account with API access.
 - Pipedrive Projects tools need Projects to be enabled in the Pipedrive account.
 - Some Pipedrive Projects endpoints are marked as beta in the official Pipedrive API docs.
-- Pipedrive list tools automatically fetch all pages, but Pipedrive still applies its own request limits and rate limits.
+- Pipedrive list tools return one page by default. Use the `limit` input to keep responses small.
+- Pipedrive list tools support `fetchAll: true` when all pages are needed, but large accounts can return more data than Claude Desktop can display in one tool result.
+- Pipedrive still applies its own request limits and rate limits.
 - Build files are not committed to GitHub. Each machine must run `npm install` and `npm run build` after cloning.
 
 ## Project Structure

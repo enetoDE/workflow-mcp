@@ -5,8 +5,9 @@ import type { PipedriveConfig } from "./config.js";
 
 const idSchema = z.number().int().positive();
 const cursorPaginationSchema = {
-  limit: z.number().int().min(1).max(500).default(500),
+  limit: z.number().int().min(1).max(500).default(100),
   cursor: z.string().trim().min(1).optional(),
+  fetchAll: z.boolean().default(false).describe("When true, follows every page. Keep false for normal chat use to avoid very large responses."),
 };
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD.");
 const customFieldsSchema = z.record(z.string(), z.unknown()).optional();
@@ -37,6 +38,10 @@ function errorText(error: unknown) {
 
 function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
+}
+
+function getV2List(client: PipedriveClient, path: string, query: Record<string, string | number | boolean | undefined>, fetchAll: boolean) {
+  return fetchAll ? client.getAllV2(path, query) : client.getV2(path, query);
 }
 
 const projectWriteSchema = z.object({
@@ -103,7 +108,7 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     "list_projects",
     {
       title: "List Pipedrive projects",
-      description: "Lists all matching non-archived projects with the official /api/v2/projects endpoint by following cursor pagination.",
+      description: "Lists matching non-archived projects with the official /api/v2/projects endpoint. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...cursorPaginationSchema,
         filterId: idSchema.optional(),
@@ -118,7 +123,8 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     async (input) => {
       try {
         return jsonText(
-          await client.getAllV2(
+          await getV2List(
+            client,
             "projects",
             compactObject({
               limit: input.limit,
@@ -130,6 +136,7 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
               person_id: input.personId,
               org_id: input.orgId,
             }),
+            input.fetchAll,
           ),
         );
       } catch (error) {
@@ -211,13 +218,13 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     "list_project_templates",
     {
       title: "List Pipedrive project templates",
-      description: "Lists all not-deleted project templates with /api/v2/projectTemplates by following cursor pagination.",
+      description: "Lists not-deleted project templates with /api/v2/projectTemplates. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object(cursorPaginationSchema),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
-    async ({ limit, cursor }) => {
+    async ({ limit, cursor, fetchAll }) => {
       try {
-        return jsonText(await client.getAllV2("projectTemplates", compactObject({ limit, cursor })));
+        return jsonText(await getV2List(client, "projectTemplates", compactObject({ limit, cursor }), fetchAll));
       } catch (error) {
         return errorText(error);
       }
@@ -246,7 +253,7 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     "list_project_tasks",
     {
       title: "List Pipedrive project tasks",
-      description: "Lists all matching tasks for a project with beta /api/v2/tasks?project_id=... by following cursor pagination.",
+      description: "Lists matching tasks for a project with beta /api/v2/tasks?project_id=... Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...cursorPaginationSchema,
         projectId: idSchema,
@@ -260,7 +267,8 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     async (input) => {
       try {
         return jsonText(
-          await client.getAllV2(
+          await getV2List(
+            client,
             "tasks",
             compactObject({
               limit: input.limit,
@@ -271,6 +279,7 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
               assignee_id: input.assigneeId,
               parent_task_id: input.parentTaskId,
             }),
+            input.fetchAll,
           ),
         );
       } catch (error) {
@@ -334,7 +343,7 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     "search_projects",
     {
       title: "Search Pipedrive projects",
-      description: "Searches all matching projects with beta /api/v2/projects/search by following cursor pagination.",
+      description: "Searches matching projects with beta /api/v2/projects/search. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...cursorPaginationSchema,
         term: z.string().trim().min(1),
@@ -348,7 +357,8 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
     async (input) => {
       try {
         return jsonText(
-          await client.getAllV2(
+          await getV2List(
+            client,
             "projects/search",
             compactObject({
               term: input.term,
@@ -359,6 +369,7 @@ export function registerPipedriveProjectTools(server: McpServer, config: Pipedri
               person_id: input.personId,
               organization_id: input.organizationId,
             }),
+            input.fetchAll,
           ),
         );
       } catch (error) {

@@ -6,12 +6,14 @@ import type { PipedriveConfig } from "./config.js";
 const idSchema = z.number().int().positive();
 const uuidSchema = z.string().uuid();
 const cursorPaginationSchema = {
-  limit: z.number().int().min(1).max(500).default(500),
+  limit: z.number().int().min(1).max(500).default(100),
   cursor: z.string().trim().min(1).optional(),
+  fetchAll: z.boolean().default(false).describe("When true, follows every page. Keep false for normal chat use to avoid very large responses."),
 };
 const offsetPaginationSchema = {
-  limit: z.number().int().min(1).max(500).default(500),
+  limit: z.number().int().min(1).max(500).default(100),
   start: z.number().int().min(0).default(0),
+  fetchAll: z.boolean().default(false).describe("When true, follows every page. Keep false for normal chat use to avoid very large responses."),
 };
 const sortDirectionSchema = z.enum(["asc", "desc"]).optional();
 const rfc3339Schema = z.string().datetime({ offset: true });
@@ -49,6 +51,14 @@ function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> 
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
 }
 
+function getV2List(client: PipedriveClient, path: string, query: Record<string, string | number | boolean | undefined>, fetchAll: boolean) {
+  return fetchAll ? client.getAllV2(path, query) : client.getV2(path, query);
+}
+
+function getV1OffsetList(client: PipedriveClient, path: string, query: Record<string, string | number | boolean | undefined>, fetchAll: boolean) {
+  return fetchAll ? client.getAllV1Offset(path, query) : client.getV1(path, query);
+}
+
 export function registerPipedriveTools(server: McpServer, config: PipedriveConfig): void {
   const client = new PipedriveClient(config);
 
@@ -82,7 +92,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     "list_deals",
     {
       title: "List Pipedrive deals",
-      description: "Lists all matching deals with the official /api/v2/deals endpoint by following cursor pagination.",
+      description: "Lists matching deals with the official /api/v2/deals endpoint. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...cursorPaginationSchema,
         filterId: idSchema.optional(),
@@ -107,7 +117,8 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     async (input) => {
       try {
         return jsonText(
-          await client.getAllV2(
+          await getV2List(
+            client,
             "deals",
             compactObject({
               limit: input.limit,
@@ -129,6 +140,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
               include_option_labels: input.includeOptionLabels,
               include_labels: input.includeLabels,
             }),
+            input.fetchAll,
           ),
         );
       } catch (error) {
@@ -226,7 +238,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     "list_persons",
     {
       title: "List Pipedrive persons",
-      description: "Lists all matching persons with /api/v2/persons by following cursor pagination.",
+      description: "Lists matching persons with /api/v2/persons. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...cursorPaginationSchema,
         filterId: idSchema.optional(),
@@ -248,7 +260,8 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     async (input) => {
       try {
         return jsonText(
-          await client.getAllV2(
+          await getV2List(
+            client,
             "persons",
             compactObject({
               limit: input.limit,
@@ -267,6 +280,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
               include_option_labels: input.includeOptionLabels,
               include_labels: input.includeLabels,
             }),
+            input.fetchAll,
           ),
         );
       } catch (error) {
@@ -339,7 +353,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     "list_organizations",
     {
       title: "List Pipedrive organizations",
-      description: "Lists all matching organizations with /api/v2/organizations by following cursor pagination.",
+      description: "Lists matching organizations with /api/v2/organizations. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...cursorPaginationSchema,
         filterId: idSchema.optional(),
@@ -359,7 +373,8 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     async (input) => {
       try {
         return jsonText(
-          await client.getAllV2(
+          await getV2List(
+            client,
             "organizations",
             compactObject({
               limit: input.limit,
@@ -376,6 +391,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
               include_option_labels: input.includeOptionLabels,
               include_labels: input.includeLabels,
             }),
+            input.fetchAll,
           ),
         );
       } catch (error) {
@@ -419,7 +435,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     "list_activities",
     {
       title: "List Pipedrive activities",
-      description: "Lists all matching activities with /api/v2/activities by following cursor pagination.",
+      description: "Lists matching activities with /api/v2/activities. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...cursorPaginationSchema,
         filterId: idSchema.optional(),
@@ -441,7 +457,8 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     async (input) => {
       try {
         return jsonText(
-          await client.getAllV2(
+          await getV2List(
+            client,
             "activities",
             compactObject({
               limit: input.limit,
@@ -460,6 +477,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
               sort_direction: input.sortDirection,
               include_fields: input.includeFields,
             }),
+            input.fetchAll,
           ),
         );
       } catch (error) {
@@ -506,7 +524,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     "list_leads",
     {
       title: "List Pipedrive leads",
-      description: "Lists all matching leads with /api/v1/leads by following offset pagination because the official lead list endpoint is v1.",
+      description: "Lists matching leads with /api/v1/leads. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...offsetPaginationSchema,
         ownerId: idSchema.optional(),
@@ -521,7 +539,8 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     async (input) => {
       try {
         return jsonText(
-          await client.getAllV1Offset(
+          await getV1OffsetList(
+            client,
             "leads",
             compactObject({
               limit: input.limit,
@@ -533,6 +552,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
               updated_since: input.updatedSince,
               sort: input.sort,
             }),
+            input.fetchAll,
           ),
         );
       } catch (error) {
@@ -562,7 +582,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     "search_entities",
     {
       title: "Search Pipedrive entities",
-      description: "Searches all matching deals, persons, organizations, leads, and other supported item types with /api/v2/itemSearch by following cursor pagination.",
+      description: "Searches matching deals, persons, organizations, leads, and other supported item types with /api/v2/itemSearch. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...cursorPaginationSchema,
         term: z.string().trim().min(1),
@@ -577,7 +597,8 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     async (input) => {
       try {
         return jsonText(
-          await client.getAllV2(
+          await getV2List(
+            client,
             "itemSearch",
             compactObject({
               term: input.term,
@@ -589,6 +610,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
               exact_match: input.exactMatch,
               include_fields: input.includeFields,
             }),
+            input.fetchAll,
           ),
         );
       } catch (error) {
@@ -601,7 +623,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     "list_pipelines",
     {
       title: "List Pipedrive pipelines",
-      description: "Lists all pipelines with /api/v2/pipelines by following cursor pagination.",
+      description: "Lists pipelines with /api/v2/pipelines. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...cursorPaginationSchema,
         sortBy: z.enum(["id", "update_time", "add_time"]).optional(),
@@ -609,9 +631,9 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
-    async ({ limit, cursor, sortBy, sortDirection }) => {
+    async ({ limit, cursor, fetchAll, sortBy, sortDirection }) => {
       try {
-        return jsonText(await client.getAllV2("pipelines", compactObject({ limit, cursor, sort_by: sortBy, sort_direction: sortDirection })));
+        return jsonText(await getV2List(client, "pipelines", compactObject({ limit, cursor, sort_by: sortBy, sort_direction: sortDirection }), fetchAll));
       } catch (error) {
         return errorText(error);
       }
@@ -622,7 +644,7 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
     "list_stages",
     {
       title: "List Pipedrive stages",
-      description: "Lists all matching stages with /api/v2/stages by following cursor pagination.",
+      description: "Lists matching stages with /api/v2/stages. Set fetchAll true only when all pages are needed.",
       inputSchema: z.object({
         ...cursorPaginationSchema,
         pipelineId: idSchema.optional(),
@@ -631,12 +653,14 @@ export function registerPipedriveTools(server: McpServer, config: PipedriveConfi
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
-    async ({ limit, cursor, pipelineId, sortBy, sortDirection }) => {
+    async ({ limit, cursor, fetchAll, pipelineId, sortBy, sortDirection }) => {
       try {
         return jsonText(
-          await client.getAllV2(
+          await getV2List(
+            client,
             "stages",
             compactObject({ limit, cursor, pipeline_id: pipelineId, sort_by: sortBy, sort_direction: sortDirection }),
+            fetchAll,
           ),
         );
       } catch (error) {
