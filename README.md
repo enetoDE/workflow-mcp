@@ -1,114 +1,114 @@
 # workflow-mcp
 
-`workflow-mcp` is a local Model Context Protocol server for company workflow integrations. It runs over stdio and is intended for local use with Claude Desktop.
+`workflow-mcp` is a local MCP server for Claude Desktop.
 
-The project is a Node.js and TypeScript application. Integrations are isolated under `src/integrations` so additional services can be added without changing the server structure.
+It lets Claude Desktop use company tools such as sevdesk and Pipedrive from one local Node.js server.
 
-## Supported Integrations
+The server runs on the user's computer. API keys stay in the local Claude Desktop config and are not stored in this repository.
+
+## What Is Included
 
 ### sevdesk
 
-Tools:
+The sevdesk integration can:
 
-- `test_sevdesk_connection`
-- `list_contacts`
-- `get_contact`
-- `create_contact`
-- `list_invoices`
-- `get_invoice`
-- `create_invoice_draft`
-- `list_unpaid_invoices`
-- `list_recent_transactions`
+- test the sevdesk connection
+- list contacts
+- get one contact
+- create a contact
+- list invoices
+- get one invoice
+- create an invoice draft
+- list unpaid invoices
+- list recent transactions
 
 ### Pipedrive CRM
 
-Tools:
+The Pipedrive CRM integration can:
 
-- `test_pipedrive_crm_connection`
-- `list_deals`
-- `get_deal`
-- `create_deal`
-- `update_deal`
-- `list_persons`
-- `get_person`
-- `create_person`
-- `list_organizations`
-- `create_organization`
-- `list_activities`
-- `create_activity`
-- `list_leads`
-- `get_lead`
-- `search_entities`
-- `list_pipelines`
-- `list_stages`
+- test the Pipedrive connection
+- list, get, create, and update deals
+- list, get, and create persons
+- list and create organizations
+- list and create activities
+- list and get leads
+- search Pipedrive records
+- list pipelines and stages
 
 ### Pipedrive Projects
 
-Tools:
+The Pipedrive Projects integration can:
 
-- `test_pipedrive_connection`
-- `list_projects`
-- `get_project`
-- `create_project`
-- `update_project`
-- `list_project_phases`
-- `list_project_templates`
-- `get_project_template`
-- `list_project_tasks`
-- `get_project_task`
-- `create_project_task`
-- `update_project_task`
-- `search_projects`
+- list, get, create, and update projects
+- list project phases
+- list and get project templates
+- list, get, create, and update project tasks
+- search projects
 
-## Prerequisites
+## Requirements
+
+Install these before using the project:
 
 - Node.js 20 or newer
 - npm
 - Claude Desktop for macOS
-- sevdesk API token for sevdesk tools
-- Pipedrive API token and company domain for Pipedrive tools
+- sevdesk API token, if using sevdesk
+- Pipedrive API token and Pipedrive company domain, if using Pipedrive
 
 ## Install
+
+Clone the repository:
 
 ```bash
 git clone https://github.com/enetoDE/workflow-mcp.git
 cd workflow-mcp
+```
+
+Install dependencies:
+
+```bash
 npm install
 ```
 
-## Build
+Build the project:
 
 ```bash
 npm run build
 ```
 
-The compiled server entrypoint is:
+After the build, this file should exist:
 
 ```text
 dist/index.js
 ```
 
-## Run Locally
+Claude Desktop will run that file.
 
-The server uses stdio and is normally launched by Claude Desktop. For a local startup check, run:
+## Local Test
+
+To check that the server starts, run:
 
 ```bash
 npm start
 ```
 
-Stop the process with `Ctrl+C`.
+The server uses stdio, so it will wait for MCP messages. This is normal.
+
+Stop it with `Ctrl+C`.
 
 ## Environment Variables
 
-Copy `.env.example` if you want a local reference file:
+The API keys are passed through the Claude Desktop config.
+
+You can also copy the example env file for reference:
 
 ```bash
 cp .env.example .env
 ```
 
-Claude Desktop does not automatically read `.env`. Add the required variables to the Claude Desktop MCP config as shown below.
+Important: Claude Desktop does not automatically read `.env`. The values must be added inside `claude_desktop_config.json`.
 
-### sevdesk
+### sevdesk Variables
 
 Required:
 
@@ -127,9 +127,9 @@ SEVDESK_DEFAULT_UNITY_ID=1
 SEVDESK_CONTACT_PERSON_ID=
 ```
 
-`SEVDESK_CONTACT_PERSON_ID` is only required when creating invoice drafts without passing `contactPersonId` in the tool input.
+`SEVDESK_CONTACT_PERSON_ID` is only needed for creating invoice drafts when no `contactPersonId` is passed in the tool request.
 
-### Pipedrive
+### Pipedrive Variables
 
 Required:
 
@@ -144,21 +144,59 @@ Example:
 PIPEDRIVE_DOMAIN=companyname.pipedrive.com
 ```
 
-## Claude Desktop Setup for macOS
+## Claude Desktop Config on macOS
 
-Claude Desktop reads local MCP server configuration from:
+Claude Desktop config file location:
 
 ```text
 ~/Library/Application Support/Claude/claude_desktop_config.json
 ```
 
-Add `workflow-mcp` under the top-level `mcpServers` object. If the file already contains other MCP servers, add `workflow-mcp` as another entry inside the same existing `mcpServers` object.
+Open it with:
 
-Do not create duplicate top-level `mcpServers` keys. Duplicate top-level keys are invalid JSON and can cause Claude Desktop to ignore part of the configuration.
+```bash
+open -e ~/Library/Application\ Support/Claude/claude_desktop_config.json
+```
 
-Replace `/absolute/path/to/workflow-mcp` with the actual local project path on the machine where the server is installed.
+The MCP server must be added inside the top-level `mcpServers` object.
 
-### sevdesk Only
+Correct structure:
+
+```json
+{
+  "mcpServers": {
+    "workflow-mcp": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/workflow-mcp/dist/index.js"
+      ],
+      "env": {}
+    }
+  }
+}
+```
+
+Do not create two separate top-level `mcpServers` blocks. That is invalid JSON.
+
+Wrong:
+
+```json
+{
+  "mcpServers": {},
+  "mcpServers": {}
+}
+```
+
+If the config already has other settings such as `preferences`, keep them. Only add or update the `workflow-mcp` entry inside `mcpServers`.
+
+## Config Example: sevdesk Only
+
+Use this if only sevdesk should be enabled.
+
+Replace:
+
+- `/absolute/path/to/workflow-mcp` with the local project path
+- `replace-with-sevdesk-api-token` with the real sevdesk API token
 
 ```json
 {
@@ -181,9 +219,18 @@ Replace `/absolute/path/to/workflow-mcp` with the actual local project path on t
 }
 ```
 
-### sevdesk and Pipedrive Together
+## Config Example: sevdesk and Pipedrive
 
-All integration environment variables go inside the same `workflow-mcp` server entry:
+Use this if sevdesk and Pipedrive should both be enabled.
+
+Both integrations go inside the same `workflow-mcp` entry. Do not create a second MCP server entry for Pipedrive if this project is handling Pipedrive.
+
+Replace:
+
+- `/absolute/path/to/workflow-mcp` with the local project path
+- `replace-with-sevdesk-api-token` with the real sevdesk API token
+- `replace-with-pipedrive-api-token` with the real Pipedrive API token
+- `companyname.pipedrive.com` with the real Pipedrive company domain
 
 ```json
 {
@@ -208,18 +255,15 @@ All integration environment variables go inside the same `workflow-mcp` server e
 }
 ```
 
-If another MCP server is already configured, keep both entries under the same `mcpServers` object:
+## Config Example: Keep Existing Preferences
+
+If the config file already has `preferences`, leave them in place.
+
+Example:
 
 ```json
 {
   "mcpServers": {
-    "existing-server": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/existing-server/dist/index.js"
-      ],
-      "env": {}
-    },
     "workflow-mcp": {
       "command": "node",
       "args": [
@@ -236,30 +280,50 @@ If another MCP server is already configured, keep both entries under the same `m
         "PIPEDRIVE_DOMAIN": "companyname.pipedrive.com"
       }
     }
+  },
+  "preferences": {
+    "sidebarMode": "chat"
   }
 }
 ```
 
-After editing the config file, fully quit and restart Claude Desktop.
+## After Editing the Config
 
-## Known Limitations and Requirements
+After saving `claude_desktop_config.json`:
 
-- sevdesk tools require an active sevdesk account with API access enabled.
-- sevdesk invoice draft creation requires a valid sevdesk contact person user ID, either through `SEVDESK_CONTACT_PERSON_ID` or the `contactPersonId` tool input.
-- Pipedrive tools require API access for the configured Pipedrive user.
-- Pipedrive Projects tools require the Projects feature to be available in the connected Pipedrive account.
-- Some Pipedrive Projects-related endpoints, including project phases, tasks, and project search, are marked as beta in the official Pipedrive API documentation.
-- Pipedrive list endpoints are paginated. This server automatically follows pagination, but each Pipedrive request is still subject to the official per-page and rate-limit rules.
-- Build output is not committed. Run `npm install` and `npm run build` after cloning.
+1. Fully quit Claude Desktop.
+2. Open Claude Desktop again.
+3. Start a new chat.
+4. Ask Claude to test the connection.
 
-## Development
+Example prompt:
+
+```text
+Use workflow-mcp to test the sevdesk and Pipedrive connections.
+```
+
+## Updating the Project Later
+
+When the repository changes, update the local copy:
 
 ```bash
-npm run typecheck
+git pull
+npm install
 npm run build
 ```
 
-Project layout:
+Restart Claude Desktop after rebuilding.
+
+## Known Requirements and Limits
+
+- sevdesk tools need a sevdesk account with API access.
+- Pipedrive tools need a Pipedrive account with API access.
+- Pipedrive Projects tools need Projects to be enabled in the Pipedrive account.
+- Some Pipedrive Projects endpoints are marked as beta in the official Pipedrive API docs.
+- Pipedrive list tools automatically fetch all pages, but Pipedrive still applies its own request limits and rate limits.
+- Build files are not committed to GitHub. Each machine must run `npm install` and `npm run build` after cloning.
+
+## Project Structure
 
 ```text
 src/
@@ -268,4 +332,11 @@ src/
   integrations/
     sevdesk/
     pipedrive/
+```
+
+## Development Commands
+
+```bash
+npm run typecheck
+npm run build
 ```
