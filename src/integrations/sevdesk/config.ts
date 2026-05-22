@@ -1,5 +1,5 @@
 export type SevdeskConfig = {
-  apiToken?: string;
+  apiToken: string;
   baseUrl: string;
   userAgent: string;
   defaultContactCategoryId: number;
@@ -26,8 +26,13 @@ function positiveInteger(value: string | undefined, name: string, fallback: numb
 }
 
 export function loadSevdeskConfig(env: NodeJS.ProcessEnv = process.env): SevdeskConfig {
+  const apiToken = env.SEVDESK_API_TOKEN?.trim();
+  if (!apiToken) {
+    throw new Error("Missing required environment variable: SEVDESK_API_TOKEN");
+  }
+
   return {
-    apiToken: env.SEVDESK_API_TOKEN,
+    apiToken,
     baseUrl: env.SEVDESK_API_BASE_URL ?? "https://my.sevdesk.de/api/v1",
     userAgent: env.SEVDESK_USER_AGENT ?? "workflow-mcp local Claude Desktop integration",
     defaultContactCategoryId: positiveInteger(env.SEVDESK_DEFAULT_CONTACT_CATEGORY_ID, "SEVDESK_DEFAULT_CONTACT_CATEGORY_ID", 3),
