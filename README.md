@@ -1,90 +1,89 @@
 # workflow-mcp
 
-`workflow-mcp` is a local MCP server for Claude Desktop.
+`workflow-mcp` provides MCP tools for sevDesk.
 
-This repository contains the sevdesk integration only. Pipedrive is handled by the separate `pipedrive-mcp-server` project.
+The repository supports two deployments:
 
-The server runs on the user's computer. API keys stay in the local Claude Desktop config and are not stored in this repository.
+- Local MCP server for Claude Desktop over stdio
+- Remote MCP server on Cloudflare Workers over Streamable HTTP
 
-## What Is Included
+This repository is sevDesk only. Pipedrive is handled by the separate `pipedrive-mcp-server` project.
 
-### sevdesk
+## Included sevDesk Tools
 
-The sevdesk integration can:
+- `test_sevdesk_connection`
+- `list_contacts`
+- `get_contact`
+- `create_contact`
+- `list_invoices`
+- `get_invoice`
+- `create_invoice_draft`
+- `list_unpaid_invoices`
+- `list_recent_transactions`
 
-- test the sevdesk connection
-- list contacts
-- get one contact
-- create a contact
-- list invoices
-- get one invoice
-- create an invoice draft
-- list unpaid invoices
-- list recent transactions
+Invoice creation only creates a sevDesk draft. It does not send, finalize, book, or email the invoice.
 
 ## Requirements
 
-Install these before using the project:
-
 - Node.js 20 or newer
 - npm
-- Claude Desktop for macOS
-- sevdesk API token
+- sevDesk API token
+- Claude Desktop for local use
+- Cloudflare account and Wrangler login for remote Worker deployment
 
-## Install
+## Local Claude Desktop Setup
 
-Clone the repository:
-
-```bash
-git clone https://github.com/enetoDE/workflow-mcp.git
-cd workflow-mcp
-```
-
-Install dependencies:
+Install and build:
 
 ```bash
 npm install
-```
-
-Build the project:
-
-```bash
 npm run build
 ```
 
-After the build, this file should exist:
+The local MCP entrypoint is:
 
 ```text
 dist/index.js
 ```
 
-Claude Desktop will run that file.
+Claude Desktop config path on macOS:
 
-## Local Test
-
-To check that the server starts, run:
-
-```bash
-npm start
+```text
+~/Library/Application Support/Claude/claude_desktop_config.json
 ```
 
-The server uses stdio, so it will wait for MCP messages. This is normal.
+Open it:
 
-Stop it with `Ctrl+C`.
+```bash
+open -e ~/Library/Application\ Support/Claude/claude_desktop_config.json
+```
+
+Add the server under the existing top-level `mcpServers` object. Do not create duplicate top-level `mcpServers` keys.
+
+```json
+{
+  "mcpServers": {
+    "workflow-mcp": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/workflow-mcp/dist/index.js"
+      ],
+      "env": {
+        "SEVDESK_API_TOKEN": "replace-with-sevdesk-api-token",
+        "SEVDESK_BASE_URL": "https://my.sevdesk.de/api/v1",
+        "SEVDESK_USER_AGENT": "workflow-mcp",
+        "SEVDESK_DEFAULT_CONTACT_CATEGORY_ID": "3",
+        "SEVDESK_DEFAULT_COUNTRY_ID": "1",
+        "SEVDESK_DEFAULT_UNITY_ID": "1"
+      }
+    }
+  }
+}
+```
+
+After editing the config, fully quit and reopen Claude Desktop.
 
 ## Environment Variables
-
-The API key is passed through the Claude Desktop config.
-
-You can also copy the example env file for reference:
-
-```bash
-cp .env.example .env
-```
-
-Important: Claude Desktop does not automatically read `.env`. The values must be added inside `claude_desktop_config.json`.
-
-### sevdesk Variables
 
 Required:
 
@@ -95,7 +94,7 @@ SEVDESK_API_TOKEN
 Optional:
 
 ```text
-SEVDESK_API_BASE_URL=https://my.sevdesk.de/api/v1
+SEVDESK_BASE_URL=https://my.sevdesk.de/api/v1
 SEVDESK_USER_AGENT=workflow-mcp
 SEVDESK_DEFAULT_CONTACT_CATEGORY_ID=3
 SEVDESK_DEFAULT_COUNTRY_ID=1
@@ -103,210 +102,118 @@ SEVDESK_DEFAULT_UNITY_ID=1
 SEVDESK_CONTACT_PERSON_ID=
 ```
 
-`SEVDESK_CONTACT_PERSON_ID` is only needed for creating invoice drafts when no `contactPersonId` is passed in the tool request.
+`SEVDESK_API_BASE_URL` is still accepted for older local configs, but new setup should use `SEVDESK_BASE_URL`.
 
-## Claude Desktop Config on macOS
+`SEVDESK_CONTACT_PERSON_ID` is only needed for invoice drafts when the tool request does not pass `contactPersonId`.
 
-Claude Desktop config file location:
+## Cloudflare Worker Setup
+
+The remote MCP Worker lives in:
 
 ```text
-~/Library/Application Support/Claude/claude_desktop_config.json
+worker/
 ```
 
-Open it with:
+It exposes:
+
+- `GET /health` for liveness
+- `/mcp` for MCP Streamable HTTP
+
+Install Worker dependencies:
 
 ```bash
-open -e ~/Library/Application\ Support/Claude/claude_desktop_config.json
+npm run worker:install
 ```
 
-The MCP server must be added inside the top-level `mcpServers` object.
-
-Correct structure:
-
-```json
-{
-  "mcpServers": {
-    "workflow-mcp": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/workflow-mcp/dist/index.js"
-      ],
-      "env": {}
-    }
-  }
-}
-```
-
-Do not create two separate top-level `mcpServers` blocks. That is invalid JSON.
-
-Wrong:
-
-```json
-{
-  "mcpServers": {},
-  "mcpServers": {}
-}
-```
-
-If the config already has other settings such as `preferences`, keep them. Only add or update entries inside `mcpServers`.
-
-## Config Example: sevdesk Only
-
-Replace:
-
-- `/absolute/path/to/workflow-mcp` with the local project path
-- `replace-with-sevdesk-api-token` with the real sevdesk API token
-
-```json
-{
-  "mcpServers": {
-    "workflow-mcp": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/workflow-mcp/dist/index.js"
-      ],
-      "env": {
-        "SEVDESK_API_TOKEN": "replace-with-sevdesk-api-token",
-        "SEVDESK_API_BASE_URL": "https://my.sevdesk.de/api/v1",
-        "SEVDESK_USER_AGENT": "workflow-mcp",
-        "SEVDESK_DEFAULT_CONTACT_CATEGORY_ID": "3",
-        "SEVDESK_DEFAULT_COUNTRY_ID": "1",
-        "SEVDESK_DEFAULT_UNITY_ID": "1"
-      }
-    }
-  }
-}
-```
-
-## Config Example: sevdesk and Separate Pipedrive Server
-
-Use this if you want sevdesk from this project and Pipedrive from the separate `pipedrive-mcp-server` project.
-
-Both servers must be inside the same top-level `mcpServers` object:
-
-- `workflow-mcp` runs sevdesk from this repository.
-- `pipedrive` runs Pipedrive from the separate `pipedrive-mcp-server` folder.
-
-Do not put Pipedrive environment variables inside `workflow-mcp`. Pipedrive has its own server entry.
-
-Replace:
-
-- `/absolute/path/to/workflow-mcp` with the local path to this project
-- `/absolute/path/to/pipedrive-mcp-server` with the local path to the Pipedrive project
-- both API token values with real tokens
-
-```json
-{
-  "mcpServers": {
-    "workflow-mcp": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/workflow-mcp/dist/index.js"
-      ],
-      "env": {
-        "SEVDESK_API_TOKEN": "replace-with-sevdesk-api-token",
-        "SEVDESK_API_BASE_URL": "https://my.sevdesk.de/api/v1",
-        "SEVDESK_USER_AGENT": "workflow-mcp",
-        "SEVDESK_DEFAULT_CONTACT_CATEGORY_ID": "3",
-        "SEVDESK_DEFAULT_COUNTRY_ID": "1",
-        "SEVDESK_DEFAULT_UNITY_ID": "1"
-      }
-    },
-    "pipedrive": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/pipedrive-mcp-server/build/index.js"
-      ],
-      "env": {
-        "PIPEDRIVE_API_TOKEN": "replace-with-pipedrive-api-token",
-        "PIPEDRIVE_DOMAIN": "companyname.pipedrive.com",
-        "MCP_TRANSPORT": "stdio"
-      }
-    }
-  }
-}
-```
-
-For example, on a local machine the two paths may look like:
-
-```text
-/Users/<your-username>/Desktop/workflow-mcp/dist/index.js
-/Users/<your-username>/Desktop/pipedrive-mcp-server/build/index.js
-```
-
-## Config Example: Keep Existing Preferences
-
-If the config file already has `preferences`, leave them in place.
-
-Example:
-
-```json
-{
-  "mcpServers": {
-    "workflow-mcp": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/workflow-mcp/dist/index.js"
-      ],
-      "env": {
-        "SEVDESK_API_TOKEN": "replace-with-sevdesk-api-token",
-        "SEVDESK_API_BASE_URL": "https://my.sevdesk.de/api/v1",
-        "SEVDESK_USER_AGENT": "workflow-mcp",
-        "SEVDESK_DEFAULT_CONTACT_CATEGORY_ID": "3",
-        "SEVDESK_DEFAULT_COUNTRY_ID": "1",
-        "SEVDESK_DEFAULT_UNITY_ID": "1"
-      }
-    },
-    "pipedrive": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/pipedrive-mcp-server/build/index.js"
-      ],
-      "env": {
-        "PIPEDRIVE_API_TOKEN": "replace-with-pipedrive-api-token",
-        "PIPEDRIVE_DOMAIN": "companyname.pipedrive.com",
-        "MCP_TRANSPORT": "stdio"
-      }
-    }
-  },
-  "preferences": {
-    "sidebarMode": "chat"
-  }
-}
-```
-
-## After Editing the Config
-
-After saving `claude_desktop_config.json`:
-
-1. Fully quit Claude Desktop.
-2. Open Claude Desktop again.
-3. Start a new chat.
-4. Ask Claude to test the connection.
-
-Example prompt:
-
-```text
-Use workflow-mcp to test the sevdesk connection.
-```
-
-## Updating the Project Later
-
-When the repository changes, update the local copy:
+Check types:
 
 ```bash
-git pull
-npm install
+npm run worker:typecheck
+```
+
+Run locally:
+
+```bash
+npm run worker:dev
+```
+
+Local URLs:
+
+```text
+http://localhost:8787/health
+http://localhost:8787/mcp
+```
+
+Set the sevDesk API token as a Cloudflare Worker secret:
+
+```bash
+cd worker
+npx wrangler secret put SEVDESK_API_TOKEN
+```
+
+Do not commit `.env`, `.dev.vars`, API tokens, logs, or Wrangler local state.
+
+Deploy:
+
+```bash
+npm run worker:deploy
+```
+
+After deployment, Wrangler prints the Worker URL. The remote endpoints will be:
+
+```text
+https://<worker-subdomain>/health
+https://<worker-subdomain>/mcp
+```
+
+## Testing Remote MCP
+
+Use MCP Inspector or another remote MCP client against:
+
+```text
+https://<worker-subdomain>/mcp
+```
+
+For Claude Desktop clients that still need a local stdio command, use `mcp-remote`:
+
+```json
+{
+  "mcpServers": {
+    "workflow-mcp-remote": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://<worker-subdomain>/mcp"
+      ]
+    }
+  }
+}
+```
+
+## Development Commands
+
+Local server:
+
+```bash
+npm run typecheck
 npm run build
+npm start
 ```
 
-Restart Claude Desktop after rebuilding.
+Cloudflare Worker:
 
-## Known Requirements and Limits
+```bash
+npm run worker:install
+npm run worker:typecheck
+npm run worker:dev
+npm run worker:deploy
+```
 
-- sevdesk tools need a sevdesk account with API access.
-- sevdesk invoice draft creation needs a valid sevdesk contact person user ID, either through `SEVDESK_CONTACT_PERSON_ID` or the `contactPersonId` tool input.
-- Build files are not committed to GitHub. Each machine must run `npm install` and `npm run build` after cloning.
+## Security Notes
+
+- sevDesk API tokens must be passed through Claude Desktop config for local use or Wrangler secrets for Cloudflare use.
+- Do not place real tokens in `wrangler.jsonc`, README examples, `.env.example`, or committed files.
+- The Worker setup is unauthenticated by default. If the remote URL will be shared outside a trusted environment, protect it with Cloudflare Access or another approved access-control layer.
 
 ## Project Structure
 
@@ -316,11 +223,10 @@ src/
   config.ts
   integrations/
     sevdesk/
-```
 
-## Development Commands
-
-```bash
-npm run typecheck
-npm run build
+worker/
+  src/index.ts
+  wrangler.jsonc
+  package.json
+  tsconfig.json
 ```

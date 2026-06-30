@@ -9,6 +9,8 @@ build/
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
 
 # Logs
 *.log
@@ -35,3 +37,6 @@ coverage/
 # Package manager caches
 .npm/
 .pnpm-store/
+
+# Cloudflare local state
+.wrangler/

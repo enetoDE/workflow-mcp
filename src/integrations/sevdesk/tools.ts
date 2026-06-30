@@ -3,6 +3,8 @@ import { z } from "zod";
 import { SevdeskApiError, SevdeskClient } from "./client.js";
 import type { SevdeskConfig } from "./config.js";
 
+type ToolServer = Pick<McpServer, "registerTool">;
+
 const TOOL_NAMES = {
   testConnection: "test_sevdesk_connection",
   listContacts: "list_contacts",
@@ -152,7 +154,7 @@ function validateCreateInvoiceDraftInput(input: z.infer<typeof createInvoiceDraf
   return undefined;
 }
 
-export function registerSevdeskTools(server: McpServer, config: SevdeskConfig): void {
+export function registerSevdeskTools(server: ToolServer, config: SevdeskConfig): void {
   const client = new SevdeskClient(config);
 
   server.registerTool(

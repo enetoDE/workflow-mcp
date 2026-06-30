@@ -8,6 +8,8 @@ export type SevdeskConfig = {
   defaultContactPersonId?: number;
 };
 
+export type SevdeskConfigEnv = Record<string, string | undefined>;
+
 function optionalPositiveInteger(value: string | undefined, name: string): number | undefined {
   if (!value) {
     return undefined;
@@ -25,7 +27,7 @@ function positiveInteger(value: string | undefined, name: string, fallback: numb
   return optionalPositiveInteger(value, name) ?? fallback;
 }
 
-export function loadSevdeskConfig(env: NodeJS.ProcessEnv = process.env): SevdeskConfig {
+export function loadSevdeskConfig(env: SevdeskConfigEnv): SevdeskConfig {
   const apiToken = env.SEVDESK_API_TOKEN?.trim();
   if (!apiToken) {
     throw new Error("Missing required environment variable: SEVDESK_API_TOKEN");
@@ -33,7 +35,7 @@ export function loadSevdeskConfig(env: NodeJS.ProcessEnv = process.env): Sevdesk
 
   return {
     apiToken,
-    baseUrl: env.SEVDESK_API_BASE_URL ?? "https://my.sevdesk.de/api/v1",
+    baseUrl: env.SEVDESK_BASE_URL ?? env.SEVDESK_API_BASE_URL ?? "https://my.sevdesk.de/api/v1",
     userAgent: env.SEVDESK_USER_AGENT ?? "workflow-mcp local Claude Desktop integration",
     defaultContactCategoryId: positiveInteger(env.SEVDESK_DEFAULT_CONTACT_CATEGORY_ID, "SEVDESK_DEFAULT_CONTACT_CATEGORY_ID", 3),
     defaultCountryId: positiveInteger(env.SEVDESK_DEFAULT_COUNTRY_ID, "SEVDESK_DEFAULT_COUNTRY_ID", 1),
