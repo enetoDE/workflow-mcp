@@ -20,8 +20,16 @@ This repository is sevDesk only. Pipedrive is handled by the separate `pipedrive
 - `create_invoice_draft`
 - `list_unpaid_invoices`
 - `list_recent_transactions`
+- `get_invoice_positions`
+- `get_contact_communication`
+- `list_vouchers`
+- `get_voucher`
+- `get_overdue_invoices`
+- `revenue_summary`
 
 Invoice creation only creates a sevDesk draft. It does not send, finalize, book, or email the invoice.
+
+The reporting tools are read-only. `get_overdue_invoices` calculates overdue invoices from open invoices, invoice dates, and payment terms. `revenue_summary` aggregates invoice totals for a compact dashboard view.
 
 ## Requirements
 

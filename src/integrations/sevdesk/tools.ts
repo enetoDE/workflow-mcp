@@ -4,6 +4,12 @@ import { SevdeskApiError, SevdeskClient } from "./client.js";
 import type { SevdeskConfig } from "./config.js";
 
 type ToolServer = Pick<McpServer, "registerTool">;
+type JsonObject = Record<string, unknown>;
+type SevdeskListResponse = JsonObject & {
+  objects?: unknown[];
+  total?: string | number;
+};
+type QueryValue = string | number | boolean | undefined;
 
 const TOOL_NAMES = {
   testConnection: "test_sevdesk_connection",
@@ -15,6 +21,12 @@ const TOOL_NAMES = {
   createInvoiceDraft: "create_invoice_draft",
   listUnpaidInvoices: "list_unpaid_invoices",
   listRecentTransactions: "list_recent_transactions",
+  getInvoicePositions: "get_invoice_positions",
+  getContactCommunication: "get_contact_communication",
+  listVouchers: "list_vouchers",
+  getVoucher: "get_voucher",
+  getOverdueInvoices: "get_overdue_invoices",
+  revenueSummary: "revenue_summary",
 } as const;
 
 const TOOL_TITLES = {
@@ -27,6 +39,12 @@ const TOOL_TITLES = {
   createInvoiceDraft: "Create sevDesk invoice draft",
   listUnpaidInvoices: "List unpaid sevDesk invoices",
   listRecentTransactions: "List recent sevDesk transactions",
+  getInvoicePositions: "Get sevDesk invoice positions",
+  getContactCommunication: "Get sevDesk contact communication",
+  listVouchers: "List sevDesk vouchers",
+  getVoucher: "Get sevDesk voucher",
+  getOverdueInvoices: "Get overdue sevDesk invoices",
+  revenueSummary: "Summarize sevDesk revenue",
 } as const;
 
 const TOOL_DESCRIPTIONS = {
@@ -39,6 +57,12 @@ const TOOL_DESCRIPTIONS = {
   createInvoiceDraft: "Creates a sevDesk invoice draft only. It does not send, finalize, book, or email the invoice.",
   listUnpaidInvoices: "Read-only. Lists open/due sevDesk invoices by calling /Invoice with status 200.",
   listRecentTransactions: "Read-only. Lists sevDesk bank/payment account transactions from the official /CheckAccountTransaction endpoint.",
+  getInvoicePositions: "Read-only. Gets line items for one sevDesk invoice from the official /Invoice/{invoiceId}/getPositions endpoint.",
+  getContactCommunication: "Read-only. Lists email, phone, mobile, or web communication ways for one sevDesk contact from the official /CommunicationWay endpoint.",
+  listVouchers: "Read-only. Lists sevDesk vouchers from the official /Voucher endpoint with pagination and optional filters.",
+  getVoucher: "Read-only. Gets one sevDesk voucher by voucher ID from the official /Voucher/{voucherId} endpoint.",
+  getOverdueInvoices: "Read-only. Lists open sevDesk invoices whose invoice date plus payment term is before the reference date. It does not send reminders or change invoices.",
+  revenueSummary: "Read-only. Builds a compact revenue dashboard summary from sevDesk invoices. It does not create, update, send, book, or delete anything.",
 } as const;
 
 const readOnlyAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true };
@@ -51,6 +75,9 @@ const paginationSchema = {
 };
 
 const idSchema = z.number().int().positive();
+const pageSizeSchema = z.number().int().min(1).max(1000).default(100);
+const maxResultsSchema = z.number().int().min(1).max(10000).default(2000);
+const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use yyyy-mm-dd.");
 
 const contactInputSchema = z
   .object({
@@ -152,6 +179,163 @@ function validateCreateInvoiceDraftInput(input: z.infer<typeof createInvoiceDraf
   }
 
   return undefined;
+}
+
+function objectsFromResponse(response: unknown): unknown[] {
+  if (!response || typeof response !== "object") {
+    return [];
+  }
+
+  const objects = (response as SevdeskListResponse).objects;
+  return Array.isArray(objects) ? objects : [];
+}
+
+function totalFromResponse(response: unknown): number | undefined {
+  if (!response || typeof response !== "object") {
+    return undefined;
+  }
+
+  const total = (response as SevdeskListResponse).total;
+  const parsed = Number(total);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+async function fetchAllObjects(
+  client: SevdeskClient,
+  path: string,
+  query: Record<string, QueryValue>,
+  options: { pageSize: number; maxResults: number },
+): Promise<{ objects: unknown[]; total?: number; fetched: number; truncated: boolean }> {
+  const objects: unknown[] = [];
+  let offset = 0;
+  let total: number | undefined;
+
+  while (objects.length < options.maxResults) {
+    const limit = Math.min(options.pageSize, options.maxResults - objects.length);
+    const response = await client.get<SevdeskListResponse>(path, {
+      ...query,
+      limit,
+      offset,
+      countAll: true,
+    });
+    const page = objectsFromResponse(response);
+    total ??= totalFromResponse(response);
+
+    objects.push(...page);
+    offset += page.length;
+
+    if (page.length < limit || page.length === 0) {
+      break;
+    }
+    if (total !== undefined && objects.length >= total) {
+      break;
+    }
+  }
+
+  return {
+    objects,
+    total,
+    fetched: objects.length,
+    truncated: total !== undefined ? objects.length < total : objects.length >= options.maxResults,
+  };
+}
+
+function asObject(value: unknown): JsonObject {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {};
+}
+
+function stringField(value: JsonObject, key: string): string | undefined {
+  const field = value[key];
+  if (typeof field === "string" && field.trim()) {
+    return field.trim();
+  }
+  if (typeof field === "number" && Number.isFinite(field)) {
+    return String(field);
+  }
+  return undefined;
+}
+
+function numberField(value: JsonObject, key: string): number | undefined {
+  const field = value[key];
+  const parsed = typeof field === "string" || typeof field === "number" ? Number(field) : NaN;
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function nestedId(value: JsonObject, key: string): string | undefined {
+  const nested = asObject(value[key]);
+  return stringField(nested, "id");
+}
+
+function parseSevdeskDate(value: unknown): Date | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value > 10_000_000_000 ? value : value * 1000);
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  const germanDate = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(trimmed);
+  if (germanDate) {
+    const [, day, month, year] = germanDate;
+    return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function toDateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function addDays(value: Date, days: number): Date {
+  const next = new Date(value.getTime());
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function daysBetween(later: Date, earlier: Date): number {
+  const millisecondsPerDay = 86_400_000;
+  return Math.floor((Date.UTC(later.getUTCFullYear(), later.getUTCMonth(), later.getUTCDate()) - Date.UTC(earlier.getUTCFullYear(), earlier.getUTCMonth(), earlier.getUTCDate())) / millisecondsPerDay);
+}
+
+function monthKey(value: Date | undefined): string {
+  return value ? value.toISOString().slice(0, 7) : "unknown";
+}
+
+function emptyMoney() {
+  return {
+    invoiceCount: 0,
+    net: 0,
+    gross: 0,
+    tax: 0,
+  };
+}
+
+function addMoney(target: ReturnType<typeof emptyMoney>, invoice: JsonObject): void {
+  target.invoiceCount += 1;
+  target.net += numberField(invoice, "sumNet") ?? 0;
+  target.gross += numberField(invoice, "sumGross") ?? 0;
+  target.tax += numberField(invoice, "sumTax") ?? 0;
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function finalizeMoney(value: ReturnType<typeof emptyMoney>) {
+  return {
+    invoiceCount: value.invoiceCount,
+    net: roundMoney(value.net),
+    gross: roundMoney(value.gross),
+    tax: roundMoney(value.tax),
+  };
+}
+
+function contactLabel(contact: unknown): string {
+  const object = asObject(contact);
+  return stringField(object, "name") ?? stringField(object, "familyname") ?? nestedId({ contact }, "contact") ?? "unknown";
 }
 
 export function registerSevdeskTools(server: ToolServer, config: SevdeskConfig): void {
@@ -463,6 +647,299 @@ export function registerSevdeskTools(server: ToolServer, config: SevdeskConfig):
             embed,
           }),
         );
+      } catch (error) {
+        return errorText(error, operation);
+      }
+    },
+  );
+
+  server.registerTool(
+    TOOL_NAMES.getInvoicePositions,
+    {
+      title: TOOL_TITLES.getInvoicePositions,
+      description: TOOL_DESCRIPTIONS.getInvoicePositions,
+      inputSchema: z.object({
+        invoiceId: idSchema,
+        limit: z.number().int().min(1).max(1000).default(100),
+        offset: z.number().int().min(0).default(0),
+        embed: z.string().trim().min(1).optional().describe("Optional comma-separated sevDesk embed value."),
+      }),
+      annotations: readOnlyAnnotations,
+    },
+    async ({ invoiceId, limit, offset, embed }) => {
+      const operation = "Get sevDesk invoice positions";
+      if (!invoiceId) {
+        return validationErrorText(operation, "invoiceId is required.");
+      }
+
+      try {
+        return jsonText(await client.get(`Invoice/${invoiceId}/getPositions`, { limit, offset, embed }));
+      } catch (error) {
+        return errorText(error, operation);
+      }
+    },
+  );
+
+  server.registerTool(
+    TOOL_NAMES.getContactCommunication,
+    {
+      title: TOOL_TITLES.getContactCommunication,
+      description: TOOL_DESCRIPTIONS.getContactCommunication,
+      inputSchema: z.object({
+        contactId: idSchema,
+        type: z.enum(["PHONE", "EMAIL", "WEB", "MOBILE"]).optional(),
+        mainOnly: z.boolean().optional().describe("When true, only returns the main communication way."),
+      }),
+      annotations: readOnlyAnnotations,
+    },
+    async ({ contactId, type, mainOnly }) => {
+      const operation = "Get sevDesk contact communication";
+      if (!contactId) {
+        return validationErrorText(operation, "contactId is required.");
+      }
+
+      try {
+        return jsonText(
+          await client.get("CommunicationWay", {
+            "contact[id]": contactId,
+            "contact[objectName]": "Contact",
+            type,
+            main: mainOnly === undefined ? undefined : mainOnly ? "1" : "0",
+          }),
+        );
+      } catch (error) {
+        return errorText(error, operation);
+      }
+    },
+  );
+
+  server.registerTool(
+    TOOL_NAMES.listVouchers,
+    {
+      title: TOOL_TITLES.listVouchers,
+      description: TOOL_DESCRIPTIONS.listVouchers,
+      inputSchema: z.object({
+        ...paginationSchema,
+        status: z.enum(["50", "100", "1000"]).optional(),
+        creditDebit: z.enum(["C", "D"]).optional().describe("C credit vouchers, D debit vouchers."),
+        descriptionLike: z.string().trim().min(1).optional(),
+        startDate: z.number().int().optional().describe("sevDesk accepts an integer timestamp for this filter."),
+        endDate: z.number().int().optional().describe("sevDesk accepts an integer timestamp for this filter."),
+        contactId: idSchema.optional(),
+      }),
+      annotations: readOnlyAnnotations,
+    },
+    async ({ limit, offset, countAll, status, creditDebit, descriptionLike, startDate, endDate, contactId }) => {
+      const operation = "List sevDesk vouchers";
+
+      try {
+        return jsonText(
+          await client.get("Voucher", {
+            limit,
+            offset,
+            countAll,
+            status,
+            creditDebit,
+            descriptionLike,
+            startDate,
+            endDate,
+            "contact[id]": contactId,
+            "contact[objectName]": contactId ? "Contact" : undefined,
+          }),
+        );
+      } catch (error) {
+        return errorText(error, operation);
+      }
+    },
+  );
+
+  server.registerTool(
+    TOOL_NAMES.getVoucher,
+    {
+      title: TOOL_TITLES.getVoucher,
+      description: TOOL_DESCRIPTIONS.getVoucher,
+      inputSchema: z.object({
+        voucherId: idSchema,
+      }),
+      annotations: readOnlyAnnotations,
+    },
+    async ({ voucherId }) => {
+      const operation = "Get sevDesk voucher";
+      if (!voucherId) {
+        return validationErrorText(operation, "voucherId is required.");
+      }
+
+      try {
+        return jsonText(await client.get(`Voucher/${voucherId}`));
+      } catch (error) {
+        return errorText(error, operation);
+      }
+    },
+  );
+
+  server.registerTool(
+    TOOL_NAMES.getOverdueInvoices,
+    {
+      title: TOOL_TITLES.getOverdueInvoices,
+      description: TOOL_DESCRIPTIONS.getOverdueInvoices,
+      inputSchema: z.object({
+        referenceDate: dateOnlySchema.optional().describe("Date used to calculate overdue status. Defaults to today."),
+        minDaysOverdue: z.number().int().min(0).default(1),
+        contactId: idSchema.optional(),
+        pageSize: pageSizeSchema,
+        maxResults: maxResultsSchema,
+      }),
+      annotations: readOnlyAnnotations,
+    },
+    async ({ referenceDate, minDaysOverdue, contactId, pageSize, maxResults }) => {
+      const operation = "Get overdue sevDesk invoices";
+      const reference = referenceDate ? new Date(`${referenceDate}T00:00:00.000Z`) : new Date();
+
+      try {
+        const fetched = await fetchAllObjects(
+          client,
+          "Invoice",
+          {
+            status: 200,
+            "contact[id]": contactId,
+            "contact[objectName]": contactId ? "Contact" : undefined,
+          },
+          { pageSize, maxResults },
+        );
+
+        const unknownDueDate: unknown[] = [];
+        const overdueInvoices = fetched.objects.flatMap((rawInvoice) => {
+          const invoice = asObject(rawInvoice);
+          const invoiceDate = parseSevdeskDate(invoice.invoiceDate);
+          const timeToPay = numberField(invoice, "timeToPay");
+
+          if (!invoiceDate || timeToPay === undefined) {
+            unknownDueDate.push(rawInvoice);
+            return [];
+          }
+
+          const dueDate = addDays(invoiceDate, timeToPay);
+          const daysOverdue = daysBetween(reference, dueDate);
+          if (daysOverdue < minDaysOverdue) {
+            return [];
+          }
+
+          return [
+            {
+              id: stringField(invoice, "id"),
+              invoiceNumber: stringField(invoice, "invoiceNumber"),
+              invoiceDate: toDateOnly(invoiceDate),
+              dueDate: toDateOnly(dueDate),
+              daysOverdue,
+              contact: invoice.contact,
+              currency: stringField(invoice, "currency"),
+              net: numberField(invoice, "sumNet"),
+              gross: numberField(invoice, "sumGross"),
+              status: stringField(invoice, "status"),
+              timeToPay,
+            },
+          ];
+        });
+
+        overdueInvoices.sort((left, right) => right.daysOverdue - left.daysOverdue);
+
+        return jsonText({
+          referenceDate: toDateOnly(reference),
+          minDaysOverdue,
+          totalOpenFromSevDesk: fetched.total,
+          fetched: fetched.fetched,
+          truncated: fetched.truncated,
+          overdueCount: overdueInvoices.length,
+          unknownDueDateCount: unknownDueDate.length,
+          overdueInvoices,
+        });
+      } catch (error) {
+        return errorText(error, operation);
+      }
+    },
+  );
+
+  server.registerTool(
+    TOOL_NAMES.revenueSummary,
+    {
+      title: TOOL_TITLES.revenueSummary,
+      description: TOOL_DESCRIPTIONS.revenueSummary,
+      inputSchema: z.object({
+        status: z.enum(["100", "200", "1000"]).optional().describe("100 Draft, 200 Open/Due, 1000 Paid."),
+        startDate: z.number().int().optional().describe("sevDesk accepts an integer timestamp for this filter."),
+        endDate: z.number().int().optional().describe("sevDesk accepts an integer timestamp for this filter."),
+        contactId: idSchema.optional(),
+        pageSize: pageSizeSchema,
+        maxResults: maxResultsSchema,
+      }),
+      annotations: readOnlyAnnotations,
+    },
+    async ({ status, startDate, endDate, contactId, pageSize, maxResults }) => {
+      const operation = "Summarize sevDesk revenue";
+
+      try {
+        const fetched = await fetchAllObjects(
+          client,
+          "Invoice",
+          {
+            status,
+            startDate,
+            endDate,
+            "contact[id]": contactId,
+            "contact[objectName]": contactId ? "Contact" : undefined,
+          },
+          { pageSize, maxResults },
+        );
+
+        const total = emptyMoney();
+        const byMonth = new Map<string, ReturnType<typeof emptyMoney>>();
+        const byStatus = new Map<string, ReturnType<typeof emptyMoney>>();
+        const byCurrency = new Map<string, ReturnType<typeof emptyMoney>>();
+        const byContact = new Map<string, ReturnType<typeof emptyMoney>>();
+
+        for (const rawInvoice of fetched.objects) {
+          const invoice = asObject(rawInvoice);
+          const invoiceDate = parseSevdeskDate(invoice.invoiceDate);
+          const statusKey = stringField(invoice, "status") ?? "unknown";
+          const currencyKey = stringField(invoice, "currency") ?? "unknown";
+          const contactKey = contactLabel(invoice.contact);
+
+          addMoney(total, invoice);
+
+          for (const [key, map] of [
+            [monthKey(invoiceDate), byMonth],
+            [statusKey, byStatus],
+            [currencyKey, byCurrency],
+            [contactKey, byContact],
+          ] as const) {
+            const bucket = map.get(key) ?? emptyMoney();
+            addMoney(bucket, invoice);
+            map.set(key, bucket);
+          }
+        }
+
+        const mapToObject = (map: Map<string, ReturnType<typeof emptyMoney>>) =>
+          Object.fromEntries([...map.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => [key, finalizeMoney(value)]));
+
+        return jsonText({
+          filters: {
+            status,
+            startDate,
+            endDate,
+            contactId,
+          },
+          totalFromSevDesk: fetched.total,
+          fetched: fetched.fetched,
+          truncated: fetched.truncated,
+          summary: finalizeMoney(total),
+          byMonth: mapToObject(byMonth),
+          byStatus: mapToObject(byStatus),
+          byCurrency: mapToObject(byCurrency),
+          topContactsByGross: [...byContact.entries()]
+            .sort(([, left], [, right]) => right.gross - left.gross)
+            .slice(0, 25)
+            .map(([contact, values]) => ({ contact, ...finalizeMoney(values) })),
+        });
       } catch (error) {
         return errorText(error, operation);
       }
